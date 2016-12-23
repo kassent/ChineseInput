@@ -1,7 +1,14 @@
 #include "CiceroInputMethod.h"
 #include "DisplayMenuManager.h"
 #include <memory>
-#define IMEINFO "״̬: "
+#define IMEINFO	"\u72b6\u6001: "
+#define SAFE_RELEASE(p)                             \
+{                                                   \
+    if (p) {                                        \
+        (p)->Release();								\
+        (p) = 0;                                    \
+	    }                                           \
+}
 
 //==========================================================
 //					CiceroInputMethod
@@ -21,6 +28,16 @@ CiceroInputMethod* CiceroInputMethod::GetSingleton()
 	return &instance;
 }
 
+CiceroInputMethod::CiceroInputMethod() : m_refCount(1), m_ciceroState(false), m_pProfileMgr(nullptr), m_pProfiles(nullptr), m_pThreadMgrEx(nullptr), m_pThreadMgr(nullptr), m_pTopContext(nullptr)
+{
+	m_uiElementSinkCookie = m_inputProfileSinkCookie = m_threadMgrEventSinkCookie = m_textEditSinkCookie = TF_INVALID_COOKIE;
+}
+
+CiceroInputMethod::~CiceroInputMethod()
+{
+
+}
+
 STDAPI_(ULONG) CiceroInputMethod::AddRef()
 {
 	return ++m_refCount;
@@ -28,80 +45,85 @@ STDAPI_(ULONG) CiceroInputMethod::AddRef()
 
 STDAPI_(ULONG) CiceroInputMethod::Release()
 {
-	LONG tempCount = --m_refCount;
-	if (m_refCount == 0)
+	if (--m_refCount == 0)
 		delete this;
-	return tempCount;
+	return m_refCount;
 }
 
 BOOL CiceroInputMethod::SetupSinks()
 {
-	CoInitialize(NULL);
+	_MESSAGE(__FUNCTION__);
 	HRESULT hr;
+	CoInitialize(NULL);
 	hr = CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, __uuidof(ITfThreadMgrEx), (void**)&m_pThreadMgrEx);
-	if (FAILED(hr))
-		return FALSE;
+	if (FAILED(hr)) return FALSE;
 	TfClientId cid;
-	if (FAILED(m_pThreadMgrEx->ActivateEx(&cid, TF_TMAE_UIELEMENTENABLEDONLY)))
-		return FALSE;
-	ITfSource *srcTm;
-	if (SUCCEEDED(hr = m_pThreadMgrEx->QueryInterface(__uuidof(ITfSource), (void **)&srcTm)))
+	if (FAILED(m_pThreadMgrEx->ActivateEx(&cid, TF_TMAE_UIELEMENTENABLEDONLY))) return FALSE;
+	ITfSource* source;
+	if (SUCCEEDED(hr = m_pThreadMgrEx->QueryInterface(__uuidof(ITfSource), (void **)&source)))
 	{
-		srcTm->AdviseSink(__uuidof(ITfUIElementSink), (ITfUIElementSink*)this, &m_dwUIElementSinkCookie);
-		srcTm->AdviseSink(__uuidof(ITfInputProcessorProfileActivationSink), (ITfInputProcessorProfileActivationSink*)this, &m_dwAlpnSinkCookie);
-		srcTm->Release();
+		source->AdviseSink(__uuidof(ITfUIElementSink), (ITfUIElementSink*)this, &m_uiElementSinkCookie);
+		source->AdviseSink(__uuidof(ITfInputProcessorProfileActivationSink), (ITfInputProcessorProfileActivationSink*)this, &m_inputProfileSinkCookie);
+		source->AdviseSink(__uuidof(ITfThreadMgrEventSink), (ITfThreadMgrEventSink*)this, &m_threadMgrEventSinkCookie);
+		source->Release();
 	}
 	hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, NULL, CLSCTX_INPROC_SERVER, IID_ITfInputProcessorProfiles, (LPVOID*)&m_pProfiles);
-	if (FAILED(hr))
-		return FALSE;
+	if (FAILED(hr)) return FALSE;
 	m_pProfiles->QueryInterface(IID_ITfInputProcessorProfileMgr, (void **)&m_pProfileMgr);
 
-	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	if (SUCCEEDED(hr))
-	{
-		hr = CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, __uuidof(ITfThreadMgr), (void**)&m_pThreadMgr);
-		if (FAILED(hr)) return FALSE;
-	}
+	hr = CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, __uuidof(ITfThreadMgr), (void**)&m_pThreadMgr);
+	if (FAILED(hr)) return FALSE;
+	_MESSAGE("Enable UILESS window input...");
 	return S_OK;
 }
 
 void CiceroInputMethod::ReleaseSinks()
 {
-	HRESULT hr;
-	ITfSource* source;
+	ITfSource* source = nullptr;
+	if (m_textEditSinkCookie != TF_INVALID_COOKIE)
+	{
+		if (m_pTopContext && SUCCEEDED(m_pTopContext->QueryInterface(&source)))
+		{
+			HRESULT hr = source->UnadviseSink(m_textEditSinkCookie);
+			SAFE_RELEASE(source);
+			SAFE_RELEASE(m_pTopContext);
+			m_textEditSinkCookie = TF_INVALID_COOKIE;
+		}
+	}
 	if (m_pThreadMgrEx && SUCCEEDED(m_pThreadMgrEx->QueryInterface(__uuidof(ITfSource), (void**)&source)))
 	{
-		hr = source->UnadviseSink(m_dwUIElementSinkCookie);
-		hr = source->UnadviseSink(m_dwAlpnSinkCookie);
-		source->Release();
+		source->UnadviseSink(m_uiElementSinkCookie);
+		source->UnadviseSink(m_inputProfileSinkCookie);
+		source->UnadviseSink(m_threadMgrEventSinkCookie);
 		m_pThreadMgrEx->Deactivate();
-		m_pThreadMgr->Release();
-		m_pProfileMgr->Release();
-		m_pProfiles->Release();
-		m_pThreadMgrEx->Release();
+		SAFE_RELEASE(source);
+		SAFE_RELEASE(m_pThreadMgr);
+		SAFE_RELEASE(m_pProfileMgr);
+		SAFE_RELEASE(m_pProfiles);
+		SAFE_RELEASE(m_pThreadMgrEx);
 	}
 	CoUninitialize();
 }
 
 STDAPI CiceroInputMethod::QueryInterface(REFIID riid, void **ppvObj)
 {
-	if (ppvObj == NULL)
+	if (ppvObj == nullptr)
 		return E_INVALIDARG;
-	*ppvObj = NULL;
+	*ppvObj = nullptr;
 	if (IsEqualIID(riid, IID_IUnknown))
-		*ppvObj = reinterpret_cast<IUnknown *>(this);
-	else if (IsEqualIID(riid, __uuidof(ITfUIElementSink)))
+		*ppvObj = reinterpret_cast<IUnknown*>(this);
+	else if (IsEqualIID(riid, IID_ITfUIElementSink))
 		*ppvObj = (ITfUIElementSink *)this;
-	else if (IsEqualIID(riid, __uuidof(ITfInputProcessorProfileActivationSink)))
+	else if (IsEqualIID(riid, IID_ITfInputProcessorProfileActivationSink))
 		*ppvObj = (ITfInputProcessorProfileActivationSink*)this;
-	else if (IsEqualIID(riid, __uuidof(ITfLanguageProfileNotifySink)))
-		*ppvObj = (ITfLanguageProfileNotifySink*)this;
-	if (*ppvObj)
-	{
-		AddRef();
-		return S_OK;
-	}
-	return E_NOINTERFACE;
+	else if (IsEqualIID(riid, IID_ITfThreadMgrEventSink))
+		*ppvObj = (ITfThreadMgrEventSink*)this;
+	else if (IsEqualIID(riid, IID_ITfTextEditSink))
+		*ppvObj = (ITfTextEditSink*)this;
+	else
+		return E_NOINTERFACE;
+	AddRef();
+	return S_OK;
 }
 
 STDAPI CiceroInputMethod::OnActivated(DWORD dwProfileType, LANGID langid, REFCLSID clsid, REFGUID catid, REFGUID guidProfile, HKL hkl, DWORD dwFlags)
@@ -193,6 +215,83 @@ STDAPI CiceroInputMethod::EndUIElement(DWORD dwUIElementId)
 		SendMessageW(hActiveHwnd, WM_IME_NOTIFY, IMN_CLOSECANDIDATE, 0);
 	return S_OK;
 }
+
+
+STDAPI CiceroInputMethod::OnInitDocumentMgr(ITfDocumentMgr *pdim)
+{
+	return S_OK;
+}
+
+STDAPI CiceroInputMethod::OnUninitDocumentMgr(ITfDocumentMgr *pdim)
+{
+	return S_OK;
+}
+
+STDAPI CiceroInputMethod::OnSetFocus(ITfDocumentMgr *pdimFocus, ITfDocumentMgr *pdimPrevFocus)
+{
+	if (!pdimFocus)
+		return S_OK;
+	ITfSource* source = nullptr;
+	if (m_textEditSinkCookie != TF_INVALID_COOKIE)
+	{
+		if (m_pTopContext && SUCCEEDED(m_pTopContext->QueryInterface(&source)))
+		{
+			HRESULT hr = source->UnadviseSink(m_textEditSinkCookie);
+			SAFE_RELEASE(source);
+			if (FAILED(hr))
+				return S_OK;
+			SAFE_RELEASE(m_pTopContext);
+			m_textEditSinkCookie = TF_INVALID_COOKIE;
+		}
+	}
+	if (SUCCEEDED(pdimFocus->GetTop(&m_pTopContext)) && SUCCEEDED(m_pTopContext->QueryInterface(&source)) && SUCCEEDED(source->AdviseSink(IID_ITfTextEditSink, static_cast<ITfTextEditSink *>(this), &m_textEditSinkCookie))){}
+	SAFE_RELEASE(source);
+	return S_OK;
+}
+
+STDAPI CiceroInputMethod::OnPushContext(ITfContext *pic)
+{
+	return S_OK;
+}
+STDAPI CiceroInputMethod::OnPopContext(ITfContext *pic)
+{
+	return S_OK;
+}
+
+STDAPI CiceroInputMethod::OnEndEdit(ITfContext *cxt, TfEditCookie ecReadOnly, ITfEditRecord *pEditRecord)//Get composition string...
+{
+	static DisplayMenuManager* menu = DisplayMenuManager::GetSingleton();
+	ITfContextComposition* pContextComposition;
+	if (FAILED(cxt->QueryInterface(&pContextComposition)))
+		return S_OK;
+	IEnumITfCompositionView *pEnumComposition;
+	if (FAILED(pContextComposition->EnumCompositions(&pEnumComposition))) 
+	{
+		pContextComposition->Release();
+		return S_OK;
+	}
+	ITfCompositionView* pCompositionView;
+	string result;
+	ULONG fetchCount = NULL;
+	while (SUCCEEDED(pEnumComposition->Next(1, &pCompositionView, &fetchCount)) && fetchCount > NULL)
+	{
+		ITfRange* pRange;
+		WCHAR buffer[MAX_PATH];
+		ULONG bufferSize = NULL;
+		if (SUCCEEDED(pCompositionView->GetRange(&pRange)))
+		{
+			pRange->GetText(ecReadOnly, TF_TF_MOVESTART, buffer, MAX_PATH, &bufferSize);
+			buffer[bufferSize] = NULL;
+			menu->inputContent = WcharToChar(buffer).get();
+			//_MESSAGE("Composition:%s", WcharToChar(buffer).get());
+			pRange->Release();
+		}
+		pCompositionView->Release();
+	}
+	pEnumComposition->Release();
+	pContextComposition->Release();
+}
+
 
 ITfUIElement* CiceroInputMethod::GetUIElement(DWORD dwUIElementId)
 {

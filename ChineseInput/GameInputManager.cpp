@@ -84,7 +84,7 @@ LRESULT CALLBACK Hooked_CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 				{
 					if (lParam & CS_INSERTCHAR){}
 					if (lParam & GCS_CURSORPOS){}
-					if (lParam & GCS_COMPSTR)
+					if ((lParam & GCS_COMPSTR) && (!cicero->m_ciceroState))
 						GameInputManager::GetInputString(hWnd);
 					if (lParam & GCS_RESULTSTR)
 						GameInputManager::GetResultString(hWnd);
@@ -107,14 +107,7 @@ LRESULT CALLBACK Hooked_CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 			return NULL;
 		case WM_CHAR:
 			{
-				if (!manager->m_charQueue.empty())
-				{
-					auto unicodeChar = manager->m_charQueue.front();
-					manager->m_charQueue.pop();
-					if (unicodeChar != INVALID_CODE)
-						manager->SendUnicodeMessage(unicodeChar);
-				}
-				else
+				if (input->allowTextInput)
 					manager->SendUnicodeMessage(wParam);
 				return DefWindowProc(hWnd, WM_CHAR, wParam, lParam);
 			}

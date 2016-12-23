@@ -18,7 +18,6 @@
 #define MenuRectY 120
 #define MenuRectSize 250
 #define MenuRectSizeExtra 50
-#define IMEINFO "״̬: "
 
 DisplayMenuManager* DisplayMenuManager::GetSingleton()
 {

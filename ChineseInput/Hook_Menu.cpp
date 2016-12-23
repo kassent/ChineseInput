@@ -2,6 +2,7 @@
 #include "skse/SafeWrite.h"
 #include "GameInputManager.h"
 #include "DisplayMenuManager.h"
+#include "CiceroInputMethod.h"
 #include <map>
 #include <algorithm>
 
@@ -55,9 +56,11 @@ EventResult CustomMenuEventHandler::ReceiveEvent(MenuOpenCloseEvent * evn, Event
 		if (!inputManager->allowTextInput)
 		{
 			static DisplayMenuManager* menu = DisplayMenuManager::GetSingleton();
+			static CiceroInputMethod* cicero = CiceroInputMethod::GetSingleton();
 			menu->enableState = false;
 			menu->candidateList.clear();
-			menu->inputContent = "";
+			menu->inputContent.clear();
+			cicero->DisableInputMethod(CHS_KB);
 		}
 	}
 	return kEvent_Continue;

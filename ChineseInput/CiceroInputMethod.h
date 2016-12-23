@@ -6,9 +6,11 @@
 #define ENG_KB 0x0409
 #define CHS_KB 0x0804
 
-class CiceroInputMethod : public ITfUIElementSink, public ITfInputProcessorProfileActivationSink
+
+class CiceroInputMethod : public ITfUIElementSink, public ITfInputProcessorProfileActivationSink, public ITfTextEditSink, public ITfThreadMgrEventSink
 {
 public:
+	using COOKIE = DWORD;
 	STDMETHODIMP QueryInterface(REFIID riid, void **ppvObj);
 	STDMETHODIMP_(ULONG) AddRef(void);
 	STDMETHODIMP_(ULONG) Release(void);
@@ -18,6 +20,17 @@ public:
 	STDMETHODIMP EndUIElement(DWORD dwUIElementId);
 
 	STDMETHODIMP OnActivated(DWORD dwProfileType, LANGID langid, REFCLSID clsid, REFGUID catid, REFGUID guidProfile, HKL hkl, DWORD dwFlags);
+
+	STDMETHODIMP OnEndEdit(ITfContext *cxt, TfEditCookie ecReadOnly, ITfEditRecord *pEditRecord);
+
+	STDMETHODIMP OnInitDocumentMgr(ITfDocumentMgr *pdim);
+	STDMETHODIMP OnUninitDocumentMgr(ITfDocumentMgr *pdim);
+	STDMETHODIMP OnSetFocus(ITfDocumentMgr *pdimFocus, ITfDocumentMgr *pdimPrevFocus);
+	STDMETHODIMP OnPushContext(ITfContext *pic);
+	STDMETHODIMP OnPopContext(ITfContext *pic);
+
+	CiceroInputMethod();
+	~CiceroInputMethod();
 
 	BOOL SetupSinks();
 	void ReleaseSinks();
@@ -32,10 +45,15 @@ public:
 
 	LONG							m_refCount;
 	BOOL							m_ciceroState;
-	DWORD							m_dwUIElementSinkCookie;
-	DWORD							m_dwAlpnSinkCookie;
+	COOKIE							m_uiElementSinkCookie;
+	COOKIE							m_inputProfileSinkCookie;
+	COOKIE							m_threadMgrEventSinkCookie;
+	COOKIE							m_textEditSinkCookie;
+	ITfContext*						m_pTopContext;
 	ITfThreadMgr*					m_pThreadMgr;
 	ITfThreadMgrEx*					m_pThreadMgrEx;
 	ITfInputProcessorProfiles*		m_pProfiles;
 	ITfInputProcessorProfileMgr*	m_pProfileMgr;
 };
+
+
