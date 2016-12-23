@@ -1,7 +1,6 @@
 #include "CiceroInputMethod.h"
 #include "DisplayMenuManager.h"
 #include <memory>
-<<<<<<< HEAD
 #define IMEINFO	"\u72b6\u6001: "
 #define SAFE_RELEASE(p)                             \
 {                                                   \
@@ -10,9 +9,6 @@
         (p) = 0;                                    \
 	    }                                           \
 }
-=======
-#define IMEINFO "状态: "
->>>>>>> origin/master
 
 //==========================================================
 //					CiceroInputMethod
@@ -139,7 +135,7 @@ STDAPI CiceroInputMethod::OnActivated(DWORD dwProfileType, LANGID langid, REFCLS
 	if (dwProfileType & TF_PROFILETYPE_INPUTPROCESSOR)
 	{
 		m_ciceroState = true;
-		//_MESSAGE("TIPÊäÈë·¨ [%08X]", (unsigned int)hkl);
+		//_MESSAGE("TIP输入法 [%08X]", (unsigned int)hkl);
 	}
 	else if (dwProfileType & TF_PROFILETYPE_KEYBOARDLAYOUT)
 	{
