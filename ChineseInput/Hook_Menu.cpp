@@ -2,9 +2,7 @@
 #include "skse/SafeWrite.h"
 #include "GameInputManager.h"
 #include "DisplayMenuManager.h"
-#include "CiceroInputMethod.h"
 #include <map>
-#include <algorithm>
 
 class CustomMenuEventHandler : public BSTEventSink<MenuOpenCloseEvent>
 {
@@ -30,7 +28,7 @@ EventResult CustomMenuEventHandler::ReceiveEvent(MenuOpenCloseEvent * evn, Event
 {
 	static MenuManager* mm = MenuManager::GetSingleton();
 	std::string menuName = evn->menuName.data;
-	if ((menuName == "Cursor Menu") || (menuName == "HUD Menu") || (menuName == "Main Menu") || (menuName == "Loading Menu") || (menuName == "Fader Menu"))//Loading Menu  //Fader Menu
+	if ((menuName == "Cursor Menu") || (menuName == "HUD Menu") || (menuName == "Main Menu") || (menuName == "Loading Menu") || (menuName == "Fader Menu"))//These menus open/close frequently,so exclude these unnecessary menus.
 		return kEvent_Continue;
 	if (evn->opening)
 	{
@@ -56,11 +54,9 @@ EventResult CustomMenuEventHandler::ReceiveEvent(MenuOpenCloseEvent * evn, Event
 		if (!inputManager->allowTextInput)
 		{
 			static DisplayMenuManager* menu = DisplayMenuManager::GetSingleton();
-			static CiceroInputMethod* cicero = CiceroInputMethod::GetSingleton();
 			menu->enableState = false;
 			menu->candidateList.clear();
 			menu->inputContent.clear();
-			cicero->DisableInputMethod(CHS_KB);
 		}
 	}
 	return kEvent_Continue;
@@ -84,11 +80,11 @@ UInt32 __fastcall Hooked_ProcessMessage(IMenu* menu, void* unk, UIMessageEx* mes
 			GFxEvent* event = scaleformData->event;
 			if (event->type == GFxEvent::KeyDown && manager->disableKeyState)
 			{
-				static std::vector<UInt8> invalidKey{0x0D, 0x08, 0x6C, 0x25, 0x26, 0x27, 0x28};
+				static std::vector<UInt8> invalidKeys{0x0D, 0x08, 0x6C, 0x25, 0x26, 0x27, 0x28};
 				GFxKeyEvent* key = (GFxKeyEvent*)event;
+				for (auto element : invalidKeys){ if (element == key->keyCode) return NULL; }
 				//_MESSAGE("keyCode = %08X, KkeyboardIndex = %d, asciiCode = %d, wcharCode = %d, specialKeysState = 0x%02X", key->keyCode, key->keyboardIndex, key->asciiCode, key->wcharCode, key->specialKeysState.states);
-				if (std::find(invalidKey.begin(), invalidKey.end(), key->keyCode) != invalidKey.end())
-					return NULL;
+				//if (std::find(invalidKeys.begin(), invalidKeys.end(), key->keyCode) != invalidKeys.end()) return NULL;
 			}
 			else if (event->type == GFxEvent::CharEvent)
 			{
@@ -111,20 +107,58 @@ UInt32 __fastcall Hooked_ProcessMessage(IMenu* menu, void* unk, UIMessageEx* mes
 	return NULL;
 }
 
-void CALLBACK PreProcessAllowTextInputFlag(bool increase)
+void __stdcall ProcessAllowTextInput(bool increase)
 {
 	static const InputManager* inputManager = InputManager::GetSingleton();
+	static const GameInputManager* manager = GameInputManager::GetSingleton();
 	UInt8 currentCount = inputManager->allowTextInput;
-	//if ((increase) && (!currentCount))
-		//GameInputManager::GetSingleton()->SetInputMethodState(true);
-	//else if ((!increase) && (currentCount == 1))
-		//GameInputManager::GetSingleton()->SetInputMethodState(false);
+	if ((increase) && (currentCount == 0))
+		::PostMessage(manager->m_hWnd, WM_IME_SETSTATE, NULL, 1);
+	else if ((!increase) && (currentCount == 1))
+		::PostMessage(manager->m_hWnd, WM_IME_SETSTATE, NULL, 0);
 }
 
-UInt32 kSKSEAllowTextInputHook_Ent;
-UInt32 kSKSEAllowTextInputHook_Ret;
+void __fastcall Hooked_AllowTextInput(void* unk1, void* unk2, GFxFunctionHandler::Args* args)
+{
+	ASSERT(args->numArgs >= 1);
+	bool enable = args->args[0].GetBool();
+	InputManager* inputManager = InputManager::GetSingleton();
+	if (inputManager)
+	{
+		ProcessAllowTextInput(enable);
+		inputManager->AllowTextInput(enable);
+	}
+}
 
-__declspec(naked) void Hooked_SKSEAllowTextInput()
+void __stdcall CheckFunctionHandler(GFxFunctionHandler* callback)
+{
+	static char* className = "class SKSEScaleform_AllowTextInput";
+	static bool result = false;
+	if (!result && strcmp(typeid(*callback).name(), className) == 0)
+	{
+		SafeWrite32((UInt32)(*(UInt32**)callback + 0x1), (UInt32)Hooked_AllowTextInput);
+		result = true;
+	}
+}
+
+__declspec(naked) void Hooked_CheckString()
+{
+	__asm
+	{
+		pop eax
+		mov eax, 0x1
+		pop edi
+		pop esi
+		pop ebp
+		pop ebx
+		retn 0x4
+	}
+}
+
+UInt32 kOriginalAllowTextInputHook_Ent;
+UInt32 kOriginalAllowTextInputHook_Ret;
+
+__declspec(naked) void Hooked_OriginalAllowTextInput()
 {
 	__asm
 	{
@@ -132,17 +166,17 @@ __declspec(naked) void Hooked_SKSEAllowTextInput()
 		pushfd
 		pushad
 		push ebx
-		call PreProcessAllowTextInputFlag
+		call ProcessAllowTextInput
 		popad
 		popfd
-		jmp [kSKSEAllowTextInputHook_Ret]
+		jmp [kOriginalAllowTextInputHook_Ret]
 	}
 }
 
-const UInt32 kBSAllowTextInputHook_Ent = 0x00A66B40;
-const UInt32 kBSAllowTextInputHook_Ret = 0x00A66B45;
+const UInt32 kCustomAllowTextInputHook_Ent = 0x00A66B40;
+const UInt32 kCustomAllowTextInputHook_Ret = 0x00A66B45;
 
-__declspec(naked) void Hooked_BSAllowTextInput()
+__declspec(naked) void Hooked_CustomAllowTextInput()
 {
 	__asm
 	{
@@ -151,13 +185,33 @@ __declspec(naked) void Hooked_BSAllowTextInput()
 		pushfd
 		pushad
 		push eax
-		call PreProcessAllowTextInputFlag
+		call ProcessAllowTextInput
 		popad
 		popfd
-		jmp [kBSAllowTextInputHook_Ret]
+		jmp [kCustomAllowTextInputHook_Ret]
 	}
 }
 
+const UInt32 kCreateFunctionHook_Ent = 0x00922DC0;
+const UInt32 kCreateFunctionHook_Ret = 0x00922DC5;
+
+__declspec(naked) void Hooked_CreateFunction()
+{
+	__asm
+	{
+		push ecx
+		mov ecx, [esp + 0xC]
+		pushad
+		push ecx
+		call CheckFunctionHandler
+		popad
+		pop ecx
+		sub esp, 0x1C
+		push ebx
+		push ebp
+		jmp [kCreateFunctionHook_Ret]
+	}
+}
 
 void Hook_TextInput_Commit()
 {
@@ -165,28 +219,31 @@ void Hook_TextInput_Commit()
 	SafeWrite8(0x0088740A, 0x00);
 	//Fix EnchanmentMenu...
 	SafeWrite8(0x008522B7, 0x00);
+	//*((GFxLoader **)0x01B2E9B0);
+	//call TESV.00A60670  bool GFxLoader::CheckString(char*);
+	WriteRelJump(0x00A6068C, (UInt32)Hooked_CheckString);
 
 	SafeWrite8(0x008868C0, 0xC3); _MESSAGE("PrecacheCharGen disabled...");
 	SafeWrite8(0x00886B50, 0xC3); _MESSAGE("PrecacheCharGenClear disabled...");
 	SafeWrite8(0x010CD560, 0x00); _MESSAGE("Intro disabled...");
 
-	//*((GFxLoader **)0x01B2E9B0);
-	//call TESV.00A60670  bool GFxLoader::CheckString(char*);
 	//Hook window mode...
-	SafeWrite32(0x012CF5F8, 0);
-	SafeWrite32(0x012CF604, 0);
+	SafeWrite32(0x012CF5F8, 0x00);
+	SafeWrite32(0x012CF604, 0x00);
 
 	SafeWrite32(0x0069D832, WS_POPUP);
 	SafeWrite32(0x0069D877, WS_POPUP | WS_VISIBLE);
 	_MESSAGE("Borderless window enabled...");
+
+	WriteRelJump(kCreateFunctionHook_Ent, (UInt32)Hooked_CreateFunction);
 	/*
-	UInt32 moduleHandle = (UInt32)GetModuleHandle("skse_1_9_32.dll");
-	kSKSEAllowTextInputHook_Ent = moduleHandle + 0x5D3E0;
-	kSKSEAllowTextInputHook_Ret = kSKSEAllowTextInputHook_Ent + 0x6;
-	WriteRelJump(kSKSEAllowTextInputHook_Ent, (UInt32)Hooked_SKSEAllowTextInput);
-	SafeWrite8(kSKSEAllowTextInputHook_Ent + 0x5, 0x90);
-	WriteRelJump(kBSAllowTextInputHook_Ent, (UInt32)Hooked_BSAllowTextInput);
+	kOriginalAllowTextInputHook_Ent = (UInt32)GetModuleHandle("skse_1_9_32.dll") + 0x5D3E0;
+	kOriginalAllowTextInputHook_Ret = kOriginalAllowTextInputHook_Ent + 0x6;
+	WriteRelJump(kOriginalAllowTextInputHook_Ent, (UInt32)Hooked_OriginalAllowTextInput);
+	SafeWrite8(kOriginalAllowTextInputHook_Ent + 0x5, 0x90);
 	*/
+	WriteRelJump(kCustomAllowTextInputHook_Ent, (UInt32)Hooked_CustomAllowTextInput);
+
 	MenuManager* mm = MenuManager::GetSingleton();
 	if (mm)
 	{

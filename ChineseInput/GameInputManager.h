@@ -4,8 +4,7 @@
 #include <dinput.h>
 #include <queue>
 #include "GFxEvent.h"
-
-
+#define WM_IME_SETSTATE 0x0655
 #define NO_INPUT	0
 #define DIRECT_INPUT	1
 #define IME_INPUT	2
@@ -142,8 +141,6 @@ public:
 };
 STATIC_ASSERT(offsetof(InputDeviceManager, keyboard) == 0x34);
 STATIC_ASSERT(sizeof(InputDeviceManager) == 0x44);
-
-
 
 
 

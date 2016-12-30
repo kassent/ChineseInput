@@ -29,7 +29,6 @@ DisplayMenuManager::DisplayMenuManager()
 {
 	_MESSAGE(__FUNCTION__);
 	enableState = disableKeyState = false;
-	title = IMEINFO;
 	rectTitle = { TitleRectX, TitleRectY, TitleRectX + TitleRectSize, TitleRectY + TextSizeNormal };
 	rectLine = new D3DRECT{ TitleRectX, TitleRectY + TextSizeNormal + 2, TitleRectX + TitleRectSize, TitleRectY + TextSizeNormal + 4 };
 	SetRect(&rectStatus, rectLine->x1, rectLine->y1 + 4, rectLine->x2, rectLine->y2 + TextSizeNormal);

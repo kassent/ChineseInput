@@ -1,6 +1,8 @@
 #include "CiceroInputMethod.h"
 #include "DisplayMenuManager.h"
+#include "GameInputManager.h"
 #include <memory>
+#include <windows.h>
 #define IMEINFO	"\u72b6\u6001: "
 #define SAFE_RELEASE(p)                             \
 {                                                   \
@@ -22,13 +24,23 @@ std::unique_ptr<char[]> WcharToChar(wchar_t* wc)
 	return m_char;
 }
 
-CiceroInputMethod* CiceroInputMethod::GetSingleton()
+bool GetCompartment(IUnknown* pUnk, const GUID& aID, ITfCompartment** pCompartment)
 {
-	static CiceroInputMethod instance;
-	return &instance;
+	if (!pUnk) return false;
+
+	ITfCompartmentMgr* pCompMgr;
+	pUnk->QueryInterface(IID_ITfCompartmentMgr, (void**)(&pCompMgr));
+	if (!pCompMgr) return false;
+	return SUCCEEDED(pCompMgr->GetCompartment(aID, pCompartment)) && (*pCompartment) != NULL;
 }
 
-CiceroInputMethod::CiceroInputMethod() : m_refCount(1), m_ciceroState(false), m_pProfileMgr(nullptr), m_pProfiles(nullptr), m_pThreadMgrEx(nullptr), m_pThreadMgr(nullptr), m_pTopContext(nullptr)
+CiceroInputMethod* CiceroInputMethod::GetSingleton()
+{
+	static CiceroInputMethod* instance = new CiceroInputMethod();
+	return instance;
+}
+
+CiceroInputMethod::CiceroInputMethod() : m_refCount(1), m_ciceroState(false), m_pProfileMgr(nullptr), m_pProfiles(nullptr), m_pThreadMgrEx(nullptr), m_pThreadMgr(nullptr), m_pBaseContext(nullptr)
 {
 	m_uiElementSinkCookie = m_inputProfileSinkCookie = m_threadMgrEventSinkCookie = m_textEditSinkCookie = TF_INVALID_COOKIE;
 }
@@ -57,8 +69,7 @@ BOOL CiceroInputMethod::SetupSinks()
 	CoInitialize(NULL);
 	hr = CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, __uuidof(ITfThreadMgrEx), (void**)&m_pThreadMgrEx);
 	if (FAILED(hr)) return FALSE;
-	TfClientId cid;
-	if (FAILED(m_pThreadMgrEx->ActivateEx(&cid, TF_TMAE_UIELEMENTENABLEDONLY))) return FALSE;
+	if (FAILED(m_pThreadMgrEx->ActivateEx(&m_clientID, TF_TMAE_UIELEMENTENABLEDONLY))) return FALSE;
 	ITfSource* source;
 	if (SUCCEEDED(hr = m_pThreadMgrEx->QueryInterface(__uuidof(ITfSource), (void **)&source)))
 	{
@@ -73,7 +84,7 @@ BOOL CiceroInputMethod::SetupSinks()
 
 	hr = CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, __uuidof(ITfThreadMgr), (void**)&m_pThreadMgr);
 	if (FAILED(hr)) return FALSE;
-	_MESSAGE("Enable UILESS window input...");
+	_MESSAGE("Enable cicero input...");
 	return S_OK;
 }
 
@@ -82,11 +93,11 @@ void CiceroInputMethod::ReleaseSinks()
 	ITfSource* source = nullptr;
 	if (m_textEditSinkCookie != TF_INVALID_COOKIE)
 	{
-		if (m_pTopContext && SUCCEEDED(m_pTopContext->QueryInterface(&source)))
+		if (m_pBaseContext && SUCCEEDED(m_pBaseContext->QueryInterface(&source)))
 		{
 			HRESULT hr = source->UnadviseSink(m_textEditSinkCookie);
 			SAFE_RELEASE(source);
-			SAFE_RELEASE(m_pTopContext);
+			SAFE_RELEASE(m_pBaseContext);
 			m_textEditSinkCookie = TF_INVALID_COOKIE;
 		}
 	}
@@ -132,10 +143,11 @@ STDAPI CiceroInputMethod::OnActivated(DWORD dwProfileType, LANGID langid, REFCLS
 	if (!bActive)
 		return S_OK;
 	this->GetCurrentInputMethodName();
+	//unk();
 	if (dwProfileType & TF_PROFILETYPE_INPUTPROCESSOR)
 	{
 		m_ciceroState = true;
-		//_MESSAGE("TIPè¾“å…¥æ³• [%08X]", (unsigned int)hkl);
+		//_MESSAGE("TIPÊäÈë·¨ [%08X]", (unsigned int)hkl);
 	}
 	else if (dwProfileType & TF_PROFILETYPE_KEYBOARDLAYOUT)
 	{
@@ -234,17 +246,17 @@ STDAPI CiceroInputMethod::OnSetFocus(ITfDocumentMgr *pdimFocus, ITfDocumentMgr *
 	ITfSource* source = nullptr;
 	if (m_textEditSinkCookie != TF_INVALID_COOKIE)
 	{
-		if (m_pTopContext && SUCCEEDED(m_pTopContext->QueryInterface(&source)))
+		if (m_pBaseContext && SUCCEEDED(m_pBaseContext->QueryInterface(&source)))
 		{
 			HRESULT hr = source->UnadviseSink(m_textEditSinkCookie);
 			SAFE_RELEASE(source);
 			if (FAILED(hr))
 				return S_OK;
-			SAFE_RELEASE(m_pTopContext);
+			SAFE_RELEASE(m_pBaseContext);
 			m_textEditSinkCookie = TF_INVALID_COOKIE;
 		}
 	}
-	if (SUCCEEDED(pdimFocus->GetTop(&m_pTopContext)) && SUCCEEDED(m_pTopContext->QueryInterface(&source)) && SUCCEEDED(source->AdviseSink(IID_ITfTextEditSink, static_cast<ITfTextEditSink *>(this), &m_textEditSinkCookie))){}
+	if (SUCCEEDED(pdimFocus->GetBase(&m_pBaseContext)) && SUCCEEDED(m_pBaseContext->QueryInterface(&source)) && SUCCEEDED(source->AdviseSink(IID_ITfTextEditSink, static_cast<ITfTextEditSink *>(this), &m_textEditSinkCookie))){}
 	SAFE_RELEASE(source);
 	return S_OK;
 }
@@ -290,6 +302,7 @@ STDAPI CiceroInputMethod::OnEndEdit(ITfContext *cxt, TfEditCookie ecReadOnly, IT
 	}
 	pEnumComposition->Release();
 	pContextComposition->Release();
+	return S_OK;
 }
 
 
@@ -310,13 +323,8 @@ void CiceroInputMethod::GetCandidateStrings(ITfCandidateListUIElement* lpCandida
 	static DisplayMenuManager* mm = DisplayMenuManager::GetSingleton();
 	if (!mm->enableState)
 		return;
-	UINT uIndex = NULL;
-	UINT uCount = NULL;
-	UINT uCurrentPage = NULL;
-	UINT uPageCount = NULL;
-	DWORD dwPageStart = NULL;
-	DWORD dwPageSize = NULL;
-	DWORD dwPageSelection = NULL;
+	UINT uIndex = NULL, uCount = NULL, uCurrentPage = NULL, uPageCount = NULL;
+	DWORD dwPageStart = NULL, dwPageSize = NULL, dwPageSelection = NULL;
 	WCHAR* result = nullptr;
 	lpCandidate->GetSelection(&uIndex);
 	lpCandidate->GetCount(&uCount);
@@ -355,24 +363,11 @@ void CiceroInputMethod::GetCandidateStrings(ITfCandidateListUIElement* lpCandida
 
 bool CiceroInputMethod::DisableInputMethod(LANGID langID = CHS_KB)
 {
-	typedef HRESULT(WINAPI *_CREATEINPUTPROCESSORPROFILES)(ITfInputProcessorProfiles**);
-	_CREATEINPUTPROCESSORPROFILES CreateInputProcessorProfiles = (_CREATEINPUTPROCESSORPROFILES)GetProcAddress(GetModuleHandle("msctf.dll"), "TF_CreateInputProcessorProfiles");
 	bool result = false;
-	if (CreateInputProcessorProfiles)
-	{
-		HRESULT hr;
-		ITfInputProcessorProfiles *pInputProcessorProfiles;
-
-		hr = CreateInputProcessorProfiles(&pInputProcessorProfiles);
-		if (SUCCEEDED(hr))
-		{
-			GUID clsid = GUID_NULL;
-			hr = pInputProcessorProfiles->ActivateLanguageProfile(clsid, langID, clsid);
-			if (SUCCEEDED(hr))
-				result = true;
-			pInputProcessorProfiles->Release();
-		}
-	}
+	GUID clsid = GUID_NULL;
+	HRESULT hr = m_pProfiles->ActivateLanguageProfile(clsid, langID, clsid);
+	if (SUCCEEDED(hr))
+		result = true;
 	return result;
 }
 

@@ -7,6 +7,7 @@
 #include <future>
 #include "MinHook.h"
 #include "imm.h"
+#define WINDOW_NAME "Skyrim"
 
 template <typename F, typename... Args>
 auto really_async(F&& f, Args&&... args)-> std::future<typename std::result_of<F(Args...)>::type>
@@ -68,15 +69,6 @@ LRESULT CALLBACK Hooked_CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 					really_async(f, 300);
 				}
 			}
-			else
-			{
-				HIMC hIMC = ImmGetContext(manager->m_hWnd);
-				if (hIMC)
-				{
-					ImmNotifyIME(hIMC, 0x0015, 4, 0);
-					ImmReleaseContext(manager->m_hWnd, hIMC);
-				}
-			}
 			return NULL;
 		case WM_IME_COMPOSITION:
 			{
@@ -84,7 +76,7 @@ LRESULT CALLBACK Hooked_CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 				{
 					if (lParam & CS_INSERTCHAR){}
 					if (lParam & GCS_CURSORPOS){}
-					if ((lParam & GCS_COMPSTR) && (!cicero->m_ciceroState))
+					if (lParam & GCS_COMPSTR)
 						GameInputManager::GetInputString(hWnd);
 					if (lParam & GCS_RESULTSTR)
 						GameInputManager::GetResultString(hWnd);
@@ -95,16 +87,20 @@ LRESULT CALLBACK Hooked_CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 			{
 				mm->enableState = false;
 				mm->candidateList.clear();
-				mm->inputContent = "";
+				mm->inputContent.clear();
 				if (input->allowTextInput)
 				{
-					auto f = [=](UInt32 time)->bool{std::this_thread::sleep_for(std::chrono::milliseconds(time)); mm->disableKeyState = false; return true; };
-					really_async(f, 200);
+					auto f = [=](UInt32 time)->bool{std::this_thread::sleep_for(std::chrono::milliseconds(time)); if (!mm->enableState){ mm->disableKeyState = false; } return true; };
+					really_async(f, 150);
 				}
-				else
-					cicero->DisableInputMethod(CHS_KB);
 			}
 			return NULL;
+		case WM_IME_SETSTATE:
+			if (lParam)
+				ImmAssociateContextEx(manager->m_hWnd, NULL, IACE_DEFAULT);
+			else
+				ImmAssociateContextEx(manager->m_hWnd, NULL, NULL);
+			break;
 		case WM_CHAR:
 			{
 				if (input->allowTextInput)
@@ -128,15 +124,15 @@ HWND WINAPI Hooked_CreateWindowExA(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR l
 
 	GetClassNameA(hWnd, className.get(), MAX_PATH);
 	GetWindowTextA(hWnd, windowName.get(), MAX_PATH);
-	const char* name = "Skyrim";
+	static const char* targetName = WINDOW_NAME;
 	_MESSAGE("Window 0x%p: ClassName \"%s\", WindowName: \"%s\"", hWnd, className, windowName);
-
-	if (strcmp(className.get(), name) == 0 && strcmp(windowName.get(), name) == 0)
+	if (strcmp(className.get(), targetName) == 0 && strcmp(windowName.get(), targetName) == 0)
 	{
 		manager->m_hWnd = hWnd;
 		manager->m_newWndProc = (WNDPROC)Hooked_CustomWndProc;
 		manager->m_oldWndProc = (WNDPROC)SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)Hooked_CustomWndProc);
 		CiceroInputMethod::GetSingleton()->SetupSinks();
+		ImmAssociateContextEx(hWnd, NULL, NULL);
 	}
 	return hWnd;
 }
@@ -155,7 +151,6 @@ GameInputManager::GameInputManager()
 	_MESSAGE(__FUNCTION__);
 	MH_Initialize();
 }
-
 
 bool GameInputManager::InstallDriverHooks()
 {

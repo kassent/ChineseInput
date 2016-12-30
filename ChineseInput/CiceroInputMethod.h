@@ -49,7 +49,8 @@ public:
 	COOKIE							m_inputProfileSinkCookie;
 	COOKIE							m_threadMgrEventSinkCookie;
 	COOKIE							m_textEditSinkCookie;
-	ITfContext*						m_pTopContext;
+	TfClientId						m_clientID;
+	ITfContext*						m_pBaseContext;
 	ITfThreadMgr*					m_pThreadMgr;
 	ITfThreadMgrEx*					m_pThreadMgrEx;
 	ITfInputProcessorProfiles*		m_pProfiles;

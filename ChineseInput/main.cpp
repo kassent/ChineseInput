@@ -13,7 +13,7 @@ const char*		kLogPath = "\\My Games\\Skyrim\\Logs\\ChineseInput.log";
 
 const char*		PLUGIN_NAME = "ChineseInput";
 const UInt32	VERSION_MAJOR = 2;
-const UInt32	VERSION_MINOR = 2;
+const UInt32	VERSION_MINOR = 3;
 const UInt32	VERSION_PATCH = 0;
 
 PluginHandle	g_pluginHandle = kPluginHandle_Invalid;
@@ -47,7 +47,7 @@ extern "C"
 		g_Log.SetLogLevel(IDebugLog::kLevel_Message);
 #endif
 
-		_MESSAGE("%s %i.%i.%i", PLUGIN_NAME, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+		_MESSAGE("%s %i.%i.%i by Kassent", PLUGIN_NAME, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
 
 		// populate info structure
 		info->infoVersion = PluginInfo::kInfoVersion;
