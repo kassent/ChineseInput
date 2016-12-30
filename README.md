@@ -1,2 +1,2 @@
 # ChineseInput
-A SKSE plugin that enable Chinese input in TESV:Skyrim.
+A SKSE plugin that enables Chinese input in TESV:Skyrim.
