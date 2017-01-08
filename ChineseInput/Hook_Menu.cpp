@@ -82,15 +82,17 @@ UInt32 __fastcall Hooked_ProcessMessage(IMenu* menu, void* unk, UIMessageEx* mes
 			{
 				static std::vector<UInt8> invalidKeys{0x0D, 0x08, 0x6C, 0x25, 0x26, 0x27, 0x28};
 				GFxKeyEvent* key = (GFxKeyEvent*)event;
-				for (auto element : invalidKeys){ if (element == key->keyCode) return NULL; }
+				for (auto& element : invalidKeys){ if (element == key->keyCode) return NULL; }
 				//_MESSAGE("keyCode = %08X, KkeyboardIndex = %d, asciiCode = %d, wcharCode = %d, specialKeysState = 0x%02X", key->keyCode, key->keyboardIndex, key->asciiCode, key->wcharCode, key->specialKeysState.states);
 				//if (std::find(invalidKeys.begin(), invalidKeys.end(), key->keyCode) != invalidKeys.end()) return NULL;
 			}
 			else if (event->type == GFxEvent::CharEvent)
 			{
 				GFxCharEvent* charEvent = (GFxCharEvent*)event;
-				//_MESSAGE("wchar = %08X, KkeyboardIndex = %d", charEvent->wcharCode, charEvent->keyboardIndex);
-				if ((!InputManager::GetSingleton()->allowTextInput) || (!charEvent->keyboardIndex) || charEvent->wcharCode < 0x20)
+				static tArray<IMenu*>* menuStack = (tArray<IMenu*>*)((char*)mm + 0x94);
+				IMenu* pTopMenu = (*menuStack)[menuStack->count - 1];
+				//_MESSAGE("wchar = %08X, keyboardIndex = %d, menu = %p, topMenu = %p", charEvent->wcharCode, charEvent->keyboardIndex, menu, topMenu);
+				if (pTopMenu == menu && ((!InputManager::GetSingleton()->allowTextInput) || (!charEvent->keyboardIndex) || charEvent->wcharCode < 0x20))
 					return NULL;
 				if (charEvent->keyboardIndex)
 					charEvent->keyboardIndex = NULL;
@@ -109,13 +111,35 @@ UInt32 __fastcall Hooked_ProcessMessage(IMenu* menu, void* unk, UIMessageEx* mes
 
 void __stdcall ProcessAllowTextInput(bool increase)
 {
-	static const InputManager* inputManager = InputManager::GetSingleton();
-	static const GameInputManager* manager = GameInputManager::GetSingleton();
+	static InputManager* inputManager = InputManager::GetSingleton();
+	static GameInputManager* manager = GameInputManager::GetSingleton();
+	if (increase)
+	{
+		static tArray<IMenu*>* menuStack = (tArray<IMenu*>*)((char*)MenuManager::GetSingleton() + 0x94);
+		IMenu* menu = (*menuStack)[menuStack->count - 1];
+		if (menu)
+		{
+			UInt32 handler = *(UInt32*)menu;
+			auto it = CustomMenuEventHandler::menuHandlers.find(handler);
+			if (it == CustomMenuEventHandler::menuHandlers.end())
+			{
+				UInt32 fn = *(*(UInt32**)menu + 0x4);
+				CustomMenuEventHandler::menuHandlers.insert(std::map<UInt32, UInt32>::value_type(handler, fn));
+				SafeWrite32((UInt32)(*(UInt32**)menu + 0x4), (UInt32)Hooked_ProcessMessage);
+			}
+		}
+	}
 	UInt8 currentCount = inputManager->allowTextInput;
 	if ((increase) && (currentCount == 0))
 		::PostMessage(manager->m_hWnd, WM_IME_SETSTATE, NULL, 1);
 	else if ((!increase) && (currentCount == 1))
+	{
 		::PostMessage(manager->m_hWnd, WM_IME_SETSTATE, NULL, 0);
+		static DisplayMenuManager* menu = DisplayMenuManager::GetSingleton();
+		menu->enableState = false;
+		menu->candidateList.clear();
+		menu->inputContent.clear();
+	}
 }
 
 void __fastcall Hooked_AllowTextInput(void* unk1, void* unk2, GFxFunctionHandler::Args* args)
@@ -244,6 +268,7 @@ void Hook_TextInput_Commit()
 	*/
 	WriteRelJump(kCustomAllowTextInputHook_Ent, (UInt32)Hooked_CustomAllowTextInput);
 
+	/*
 	MenuManager* mm = MenuManager::GetSingleton();
 	if (mm)
 	{
@@ -251,5 +276,6 @@ void Hook_TextInput_Commit()
 		eventDispatcher->AddEventSink(CustomMenuEventHandler::GetSingleton());
 	}
 	_MESSAGE("Add menu event sink...");
+	*/
 }
 
