@@ -13,8 +13,8 @@ const char*		kLogPath = "\\My Games\\Skyrim\\Logs\\ChineseInput.log";
 
 const char*		PLUGIN_NAME = "ChineseInput";
 const UInt32	VERSION_MAJOR = 2;
-const UInt32	VERSION_MINOR = 3;
-const UInt32	VERSION_PATCH = 0;
+const UInt32	VERSION_MINOR = 4;
+const UInt32	VERSION_PATCH = 1;
 
 PluginHandle	g_pluginHandle = kPluginHandle_Invalid;
 

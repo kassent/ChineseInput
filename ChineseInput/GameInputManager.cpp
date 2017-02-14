@@ -51,7 +51,6 @@ LRESULT CALLBACK Hooked_CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 				case IMN_OPENCANDIDATE:
 				case IMN_SETCANDIDATEPOS:
 				case IMN_CHANGECANDIDATE:
-				case IMN_CLOSECANDIDATE:
 					mm->enableState = true;
 					if (!cicero->m_ciceroState)
 						GameInputManager::GetCandidateList(hWnd);
@@ -90,7 +89,7 @@ LRESULT CALLBACK Hooked_CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 				mm->inputContent.clear();
 				if (input->allowTextInput)
 				{
-					auto f = [=](UInt32 time)->bool{std::this_thread::sleep_for(std::chrono::milliseconds(time)); if (!mm->enableState){ mm->disableKeyState = false; } return true; };
+					auto f = [](UInt32 time)->bool{std::this_thread::sleep_for(std::chrono::milliseconds(time)); if (!mm->enableState){ mm->disableKeyState = false; } return true; };
 					really_async(f, 150);
 				}
 			}
@@ -131,6 +130,7 @@ HWND WINAPI Hooked_CreateWindowExA(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR l
 		manager->m_hWnd = hWnd;
 		manager->m_newWndProc = (WNDPROC)Hooked_CustomWndProc;
 		manager->m_oldWndProc = (WNDPROC)SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)Hooked_CustomWndProc);
+		_MESSAGE("WNDPROC = %p", manager->m_oldWndProc);
 		CiceroInputMethod::GetSingleton()->SetupSinks();
 		ImmAssociateContextEx(hWnd, NULL, NULL);
 	}
@@ -289,12 +289,12 @@ bool GameInputManager::SendUnicodeMessage(UInt32 wcharCode)
 	if (mm->allowTextInput)
 	{
 		BSUIScaleformData* msgData = (BSUIScaleformData*)UIMessageEx::CreateUIMessageData(stringHolder->bsUIScaleformData);
-		GFxCharEvent* charEvent = (GFxCharEvent*)FormHeap_Allocate(sizeof(GFxCharEvent));
-		charEvent->type = GFxEvent::CharEvent;
-		charEvent->wcharCode = wcharCode;
-		charEvent->keyboardIndex = IME_CHAR;
-
-		msgData->event = charEvent;
+		msgData->event = m_buffer.emplace_back(wcharCode, IME_CHAR);
+		//static GFxCharEvent* charEvent = (GFxCharEvent*)FormHeap_Allocate(sizeof(GFxCharEvent));
+		//charEvent->type = GFxEvent::CharEvent;
+		//charEvent->wcharCode = wcharCode;
+		//charEvent->keyboardIndex = IME_CHAR;
+		//msgData->event = &m_buffer.back();
 		BSFixedString menuName = stringHolder->topMenu;
 		CALL_MEMBER_FN(UIManager::GetSingleton(), AddMessage)(&menuName, UIMessageEx::kMessage_Scaleform, msgData);//How to FormHeap_Free?
 		return true;

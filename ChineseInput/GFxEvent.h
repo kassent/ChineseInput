@@ -272,10 +272,10 @@ public:
 class GFxCharEvent : public GFxEvent
 {
 public:
+	GFxCharEvent() = default;
 	GFxCharEvent(UInt32 a_wcharCode, UInt8 a_keyboardIndex = 0) : GFxEvent(CharEvent), wcharCode(a_wcharCode), keyboardIndex(a_keyboardIndex)
 	{
 	}
-
 	// @members
 	UInt32	wcharCode;			// 04
 	UInt8	keyboardIndex;		// 08

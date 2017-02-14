@@ -84,6 +84,7 @@ BOOL CiceroInputMethod::SetupSinks()
 
 	hr = CoCreateInstance(CLSID_TF_ThreadMgr, NULL, CLSCTX_INPROC_SERVER, __uuidof(ITfThreadMgr), (void**)&m_pThreadMgr);
 	if (FAILED(hr)) return FALSE;
+	this->GetCurrentInputMethodName();
 	_MESSAGE("Enable cicero input...");
 	return S_OK;
 }

@@ -2,77 +2,14 @@
 #include "skse/SafeWrite.h"
 #include "GameInputManager.h"
 #include "DisplayMenuManager.h"
-#include <map>
-
-class CustomMenuEventHandler : public BSTEventSink<MenuOpenCloseEvent>
-{
-public:
-	virtual EventResult ReceiveEvent(MenuOpenCloseEvent * evn, EventDispatcher<MenuOpenCloseEvent> * dispatcher);
-
-	static CustomMenuEventHandler* GetSingleton();
-
-	static std::map<UInt32, UInt32> menuHandlers;
-};
-
-std::map<UInt32, UInt32> CustomMenuEventHandler::menuHandlers;
-
-CustomMenuEventHandler* CustomMenuEventHandler::GetSingleton()
-{
-	static CustomMenuEventHandler instance;
-	return &instance;
-}
-
-UInt32 __fastcall Hooked_ProcessMessage(IMenu*, void*, UIMessageEx*);
-
-EventResult CustomMenuEventHandler::ReceiveEvent(MenuOpenCloseEvent * evn, EventDispatcher<MenuOpenCloseEvent> * dispatcher)
-{
-	static MenuManager* mm = MenuManager::GetSingleton();
-	std::string menuName = evn->menuName.data;
-	if ((menuName == "Cursor Menu") || (menuName == "HUD Menu") || (menuName == "Main Menu") || (menuName == "Loading Menu") || (menuName == "Fader Menu"))//These menus open/close frequently,so exclude these unnecessary menus.
-		return kEvent_Continue;
-	if (evn->opening)
-	{
-		if (mm->IsMenuOpen(&(evn->menuName)))
-		{
-			IMenu* menu = mm->GetMenu(&(evn->menuName));
-			if (menu)
-			{
-				UInt32 handler = *(UInt32*)menu;
-				auto it = menuHandlers.find(handler);
-				if (it == menuHandlers.end())
-				{
-					UInt32 fn = *(*(UInt32**)menu + 0x4);
-					menuHandlers.insert(std::map<UInt32, UInt32>::value_type(handler, fn));
-					SafeWrite32((UInt32)(*(UInt32**)menu + 0x4), (UInt32)Hooked_ProcessMessage);
-				}
-			}
-		}
-	}
-	else
-	{
-		static InputManager* inputManager = InputManager::GetSingleton();
-		if (!inputManager->allowTextInput)
-		{
-			static DisplayMenuManager* menu = DisplayMenuManager::GetSingleton();
-			menu->enableState = false;
-			menu->candidateList.clear();
-			menu->inputContent.clear();
-		}
-	}
-	return kEvent_Continue;
-}
 
 typedef UInt32(__fastcall *_ProcessMessage)(IMenu* menu, void* unk, UIMessageEx* message);
+_ProcessMessage ProcessMessage = (_ProcessMessage)*(reinterpret_cast<UInt32*>(0x010E4BD4) + 0x4);
 
 UInt32 __fastcall Hooked_ProcessMessage(IMenu* menu, void* unk, UIMessageEx* message)
 {
-	static MenuManager* mm = MenuManager::GetSingleton();
 	static DisplayMenuManager* manager = DisplayMenuManager::GetSingleton();
-	if (message->type == UIMessageEx::kMessage_Open){}
-		//_MESSAGE("OPEN MESSAGE RECEIVED: (name=%s, view=%p)", message->name.data, menu->view);
-	else if (message->type == UIMessageEx::kMessage_Close){}
-		//_MESSAGE("CLOSE MESSAGE RECEIVED: (name=%s)", message->name.data);
-	else if (message->type == UIMessageEx::kMessage_Scaleform)
+	if (message->type == UIMessageEx::kMessage_Scaleform)
 	{
 		if (menu->view && message->data)
 		{
@@ -82,53 +19,29 @@ UInt32 __fastcall Hooked_ProcessMessage(IMenu* menu, void* unk, UIMessageEx* mes
 			{
 				static std::vector<UInt8> invalidKeys{0x0D, 0x08, 0x6C, 0x25, 0x26, 0x27, 0x28};
 				GFxKeyEvent* key = (GFxKeyEvent*)event;
-				for (auto& element : invalidKeys){ if (element == key->keyCode) return NULL; }
-				//_MESSAGE("keyCode = %08X, KkeyboardIndex = %d, asciiCode = %d, wcharCode = %d, specialKeysState = 0x%02X", key->keyCode, key->keyboardIndex, key->asciiCode, key->wcharCode, key->specialKeysState.states);
-				//if (std::find(invalidKeys.begin(), invalidKeys.end(), key->keyCode) != invalidKeys.end()) return NULL;
+				for (auto& element : invalidKeys)
+				{ 
+					if (element == key->keyCode) 
+						return NULL; 
+				}
 			}
 			else if (event->type == GFxEvent::CharEvent)
 			{
 				GFxCharEvent* charEvent = (GFxCharEvent*)event;
-				static tArray<IMenu*>* menuStack = (tArray<IMenu*>*)((char*)mm + 0x94);
-				IMenu* pTopMenu = (*menuStack)[menuStack->count - 1];
-				//_MESSAGE("wchar = %08X, keyboardIndex = %d, menu = %p, topMenu = %p", charEvent->wcharCode, charEvent->keyboardIndex, menu, topMenu);
-				if (pTopMenu == menu && ((!InputManager::GetSingleton()->allowTextInput) || (!charEvent->keyboardIndex) || charEvent->wcharCode < 0x20))
+				if ((!InputManager::GetSingleton()->allowTextInput) || (!charEvent->keyboardIndex) || charEvent->wcharCode < 0x20)
 					return NULL;
 				if (charEvent->keyboardIndex)
 					charEvent->keyboardIndex = NULL;
 			}
 		}
 	}
-	auto it = CustomMenuEventHandler::menuHandlers.find(*(UInt32*)menu);
-	if (it != CustomMenuEventHandler::menuHandlers.end())
-	{
-		_ProcessMessage ProcessMessage = (_ProcessMessage)(it->second);
-		return ProcessMessage(menu, NULL, message);
-	}
-	_MESSAGE("Error:can't find menu's process function in map container...");
-	return NULL;
+	return ProcessMessage(menu, NULL, message);
 }
 
 void __stdcall ProcessAllowTextInput(bool increase)
 {
 	static InputManager* inputManager = InputManager::GetSingleton();
 	static GameInputManager* manager = GameInputManager::GetSingleton();
-	if (increase)
-	{
-		static tArray<IMenu*>* menuStack = (tArray<IMenu*>*)((char*)MenuManager::GetSingleton() + 0x94);
-		IMenu* menu = (*menuStack)[menuStack->count - 1];
-		if (menu)
-		{
-			UInt32 handler = *(UInt32*)menu;
-			auto it = CustomMenuEventHandler::menuHandlers.find(handler);
-			if (it == CustomMenuEventHandler::menuHandlers.end())
-			{
-				UInt32 fn = *(*(UInt32**)menu + 0x4);
-				CustomMenuEventHandler::menuHandlers.insert(std::map<UInt32, UInt32>::value_type(handler, fn));
-				SafeWrite32((UInt32)(*(UInt32**)menu + 0x4), (UInt32)Hooked_ProcessMessage);
-			}
-		}
-	}
 	UInt8 currentCount = inputManager->allowTextInput;
 	if ((increase) && (currentCount == 0))
 		::PostMessage(manager->m_hWnd, WM_IME_SETSTATE, NULL, 1);
@@ -260,22 +173,10 @@ void Hook_TextInput_Commit()
 	_MESSAGE("Borderless window enabled...");
 
 	WriteRelJump(kCreateFunctionHook_Ent, (UInt32)Hooked_CreateFunction);
-	/*
-	kOriginalAllowTextInputHook_Ent = (UInt32)GetModuleHandle("skse_1_9_32.dll") + 0x5D3E0;
-	kOriginalAllowTextInputHook_Ret = kOriginalAllowTextInputHook_Ent + 0x6;
-	WriteRelJump(kOriginalAllowTextInputHook_Ent, (UInt32)Hooked_OriginalAllowTextInput);
-	SafeWrite8(kOriginalAllowTextInputHook_Ent + 0x5, 0x90);
-	*/
+
 	WriteRelJump(kCustomAllowTextInputHook_Ent, (UInt32)Hooked_CustomAllowTextInput);
 
-	/*
-	MenuManager* mm = MenuManager::GetSingleton();
-	if (mm)
-	{
-		EventDispatcher<MenuOpenCloseEvent>* eventDispatcher = mm->MenuOpenCloseEventDispatcher();
-		eventDispatcher->AddEventSink(CustomMenuEventHandler::GetSingleton());
-	}
-	_MESSAGE("Add menu event sink...");
-	*/
+	SafeWrite32(0x010E4BD4 + 0x10, (UInt32)Hooked_ProcessMessage);
+	_MESSAGE("Hook virtual function table of top menu...");
 }
 

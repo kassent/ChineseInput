@@ -4,6 +4,7 @@
 #include <dinput.h>
 #include <queue>
 #include "GFxEvent.h"
+#include "RingBuffer.h"
 #define WM_IME_SETSTATE 0x0655
 #define NO_INPUT	0
 #define DIRECT_INPUT	1
@@ -12,12 +13,15 @@
 #define IME_CHAR 0x1
 #define DEFAULT_KEYBOARD 0x04090409
 
+typedef RingBuffer<GFxCharEvent, 0x64> Buffer;
+
 class BSUIScaleformData : public IUIMessageData
 {
 public:
 	virtual ~BSUIScaleformData() {}		// 00897320
 
 	//void		** _vtbl;		// 00 - 0110DF70
+	//UInt8[4]     unk;
 	GFxEvent	* event;		// 08
 };
 STATIC_ASSERT(sizeof(BSUIScaleformData) == 0x0C);
@@ -81,6 +85,7 @@ public:
 	Direct3DCreate9				m_newDirect3DCreate9;
 	WNDPROC						m_oldWndProc;
 	WNDPROC						m_newWndProc;
+	Buffer						m_buffer;
 };
 
 class  BSWin32KeyboardDevice
