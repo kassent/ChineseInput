@@ -1,34 +1,24 @@
 #include "skse/PluginAPI.h"
 #include "skse/skse_version.h"
 #include "skse/PluginManager.h"
-#include "GameInputManager.h"
-#include "Hook_Menu.h"
+
+#include "Hooks.h"
 
 #include <shlobj.h>	// CSIDL_MYCODUMENTS
 
 #define REQUIRE_SKSE_VERSION 0x01070030
 
 IDebugLog		g_Log;
-const char*		kLogPath = "\\My Games\\Skyrim\\Logs\\ChineseInput.log";
+const char*		kLogPath = "\\My Games\\Skyrim\\SKSE\\ChineseInput.log";
 
 const char*		PLUGIN_NAME = "ChineseInput";
 const UInt32	VERSION_MAJOR = 2;
-const UInt32	VERSION_MINOR = 4;
-const UInt32	VERSION_PATCH = 1;
+const UInt32	VERSION_MINOR = 6;
+const UInt32	VERSION_PATCH = 5;
 
 PluginHandle	g_pluginHandle = kPluginHandle_Invalid;
 
-SKSEScaleformInterface*			g_scaleform = NULL;
-SKSEMessagingInterface*			g_messageInterface = NULL;
 
-void InputLoadedCallback(SKSEMessagingInterface::Message* msg)
-{
-	if (msg->type == SKSEMessagingInterface::kMessage_InputLoaded)
-	{
-		InputDeviceManager::GetSingleton()->SetKeyboardCooperativeLevel(DISCL_NONEXCLUSIVE | DISCL_FOREGROUND | DISCL_NOWINKEY);
-		_MESSAGE("Input loaded...");
-	}
-}
 // ======================================================
 // Initialization
 // ======================================================
@@ -47,7 +37,7 @@ extern "C"
 		g_Log.SetLogLevel(IDebugLog::kLevel_Message);
 #endif
 
-		_MESSAGE("%s %i.%i.%i by Kassent", PLUGIN_NAME, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
+		_MESSAGE("%s %i.%i.%i", PLUGIN_NAME, VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
 
 		// populate info structure
 		info->infoVersion = PluginInfo::kInfoVersion;
@@ -78,20 +68,6 @@ extern "C"
 			return false;
 		}
 
-		g_messageInterface = (SKSEMessagingInterface *)skse->QueryInterface(kInterface_Messaging);
-		if (!g_messageInterface)
-		{
-			_ERROR("Couldn't Get Messaging Interface");
-
-			return false;
-		}
-		if (g_messageInterface->interfaceVersion < SKSEMessagingInterface::kInterfaceVersion)
-		{
-			_ERROR("messaging interface too old (%d expected %d)", g_messageInterface->interfaceVersion, SKSEMessagingInterface::kInterfaceVersion);
-
-			return false;
-		}
-
 		// supported runtime version
 		return true;
 	}
@@ -99,15 +75,7 @@ extern "C"
 
 	bool SKSEPlugin_Load(const SKSEInterface * skse)
 	{
-		// register callback for SKSE messaging interface
-		GameInputManager::GetSingleton()->InstallDriverHooks();
-
-		//Hook_DirectInput_Commit();
-
 		Hook_TextInput_Commit();
-		
-		g_messageInterface->RegisterListener(g_pluginHandle, "SKSE", InputLoadedCallback);
-
 		return true;
 	}
 
